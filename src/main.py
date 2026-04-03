@@ -277,6 +277,22 @@ async def run_application(app: Dict[str, Any]) -> None:
         # Now wire up components that need the Telegram Bot instance
         telegram_bot = bot.app.bot
 
+        # Send welcome-back message if this is a model-switch restart
+        import json
+        from pathlib import Path as _Path
+        _state_path = _Path("/tmp/claude-bot-restart-state.json")
+        if _state_path.exists():
+            try:
+                _state = json.loads(_state_path.read_text())
+                _state_path.unlink()
+                await telegram_bot.send_message(
+                    chat_id=_state["chat_id"],
+                    text=f"✅ <b>Bot restarted</b>\n\nNow using model: <code>{_state['model_id']}</code>",
+                    parse_mode="HTML",
+                )
+            except Exception as _e:
+                logger.warning("Failed to send restart notification", error=str(_e))
+
         # Start event bus
         await event_bus.start()
 

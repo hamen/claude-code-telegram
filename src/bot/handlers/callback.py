@@ -1,5 +1,8 @@
 """Handle inline keyboard callbacks."""
 
+import os
+import re
+import signal
 from pathlib import Path
 from typing import Optional
 
@@ -66,6 +69,7 @@ async def handle_callback_query(
             "conversation": handle_conversation_callback,
             "git": handle_git_callback,
             "export": handle_export_callback,
+            "model": handle_model_callback,
         }
 
         handler = handlers.get(action)
@@ -1297,6 +1301,40 @@ async def handle_export_callback(
             f"❌ <b>Export Failed</b>\n\n{escape_html(str(e))}",
             parse_mode="HTML",
         )
+
+
+async def handle_model_callback(
+    query, model_id: str, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle model selection from inline keyboard — update .env and restart."""
+    from ...config.settings import Settings
+
+    settings: Settings = context.bot_data["settings"]
+
+    # Validate model_id (alphanumeric, dashes, dots only)
+    if not re.match(r'^[a-zA-Z0-9._-]+$', model_id):
+        await query.edit_message_text("❌ Invalid model name.", parse_mode="HTML")
+        return
+
+    env_path = Path("/home/ivan/claude-telegram-bot/.env")
+    if not env_path.exists():
+        await query.edit_message_text("❌ .env file not found.", parse_mode="HTML")
+        return
+
+    content = env_path.read_text()
+    if re.search(r'^CLAUDE_MODEL=', content, re.MULTILINE):
+        content = re.sub(r'^CLAUDE_MODEL=.*$', f'CLAUDE_MODEL={model_id}', content, flags=re.MULTILINE)
+    else:
+        content += f'\nCLAUDE_MODEL={model_id}\n'
+    env_path.write_text(content)
+
+    await query.edit_message_text(
+        f"✅ <b>Model updated to:</b> <code>{model_id}</code>\n\n🔄 Restarting bot…",
+        parse_mode="HTML",
+    )
+
+    logger.info("Model changed via /model command", model=model_id)
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 def _format_file_size(size: int) -> str:

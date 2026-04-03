@@ -1232,6 +1232,30 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error("Error in git_command", error=str(e), user_id=user_id)
 
 
+AVAILABLE_MODELS = [
+    ("claude-opus-4-6", "Opus 4.6 — most capable"),
+    ("claude-sonnet-4-6", "Sonnet 4.6 — balanced"),
+    ("claude-haiku-4-5-20251001", "Haiku 4.5 — fastest"),
+]
+
+
+async def model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /model command — show inline keyboard to pick Claude model."""
+    settings: Settings = context.bot_data["settings"]
+    current = settings.claude_model or "default"
+
+    keyboard = []
+    for model_id, label in AVAILABLE_MODELS:
+        tick = "✅ " if model_id == current else ""
+        keyboard.append([InlineKeyboardButton(f"{tick}{label}", callback_data=f"model:{model_id}")])
+
+    await update.message.reply_text(
+        f"🤖 <b>Select Claude Model</b>\n\nCurrent: <code>{current}</code>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
 async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /restart command - gracefully restart the bot process.
 

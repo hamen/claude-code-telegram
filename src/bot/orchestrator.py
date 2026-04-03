@@ -6,7 +6,9 @@ classic mode, delegates to existing full-featured handlers.
 """
 
 import asyncio
+import os
 import re
+import signal
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -327,6 +329,7 @@ class MessageOrchestrator:
             ("status", self.agentic_status),
             ("verbose", self.agentic_verbose),
             ("repo", self.agentic_repo),
+            ("model", command.model_command),
             ("restart", command.restart_command),
         ]
         if self.settings.enable_project_threads:
@@ -396,6 +399,14 @@ class MessageOrchestrator:
             )
         )
 
+        # Model selection callbacks
+        app.add_handler(
+            CallbackQueryHandler(
+                self._inject_deps(self._handle_model_callback),
+                pattern=r"^model:",
+            )
+        )
+
         logger.info("Agentic handlers registered")
 
     def _register_classic_handlers(self, app: Application) -> None:
@@ -416,6 +427,7 @@ class MessageOrchestrator:
             ("export", command.export_session),
             ("actions", command.quick_actions),
             ("git", command.git_command),
+            ("model", command.model_command),
             ("restart", command.restart_command),
         ]
         if self.settings.enable_project_threads:
@@ -460,6 +472,7 @@ class MessageOrchestrator:
                 BotCommand("status", "Show session status"),
                 BotCommand("verbose", "Set output verbosity (0/1/2)"),
                 BotCommand("repo", "List repos / switch workspace"),
+                BotCommand("model", "Switch Claude model"),
                 BotCommand("restart", "Restart the bot"),
             ]
             if self.settings.enable_project_threads:
@@ -480,6 +493,7 @@ class MessageOrchestrator:
                 BotCommand("export", "Export current session"),
                 BotCommand("actions", "Show quick actions"),
                 BotCommand("git", "Git repository commands"),
+                BotCommand("model", "Switch Claude model"),
                 BotCommand("restart", "Restart the bot"),
             ]
             if self.settings.enable_project_threads:
@@ -1744,12 +1758,39 @@ class MessageOrchestrator:
             parse_mode="HTML",
         )
 
-        # Audit log
-        audit_logger = context.bot_data.get("audit_logger")
-        if audit_logger:
-            await audit_logger.log_command(
-                user_id=query.from_user.id,
-                command="cd",
-                args=[project_name],
-                success=True,
-            )
+    async def _handle_model_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle model: callbacks — update .env and restart."""
+        query = update.callback_query
+        await query.answer()
+
+        _, model_id = query.data.split(":", 1)
+
+        if not re.match(r'^[a-zA-Z0-9._-]+$', model_id):
+            await query.edit_message_text("❌ Invalid model name.", parse_mode="HTML")
+            return
+
+        env_path = Path("/home/ivan/claude-telegram-bot/.env")
+        content = env_path.read_text()
+        if re.search(r'^CLAUDE_MODEL=', content, re.MULTILINE):
+            content = re.sub(r'^CLAUDE_MODEL=.*$', f'CLAUDE_MODEL={model_id}', content, flags=re.MULTILINE)
+        else:
+            content += f'\nCLAUDE_MODEL={model_id}\n'
+        env_path.write_text(content)
+
+        await query.edit_message_text(
+            f"✅ <b>Model set to:</b> <code>{model_id}</code>\n\n🔄 Restarting…",
+            parse_mode="HTML",
+        )
+        logger.info("Model changed via /model", model=model_id, user_id=query.from_user.id)
+
+        # Write restart state so the bot can send a welcome-back message on startup
+        import json
+        state_path = Path("/tmp/claude-bot-restart-state.json")
+        state_path.write_text(json.dumps({
+            "chat_id": query.message.chat_id,
+            "model_id": model_id,
+        }))
+
+        os.kill(os.getpid(), signal.SIGTERM)
