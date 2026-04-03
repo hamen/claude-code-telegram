@@ -98,7 +98,7 @@ The bot supports two interaction modes:
 
 The default conversational mode. Just talk to Claude naturally -- no special commands required.
 
-**Commands:** `/start`, `/new`, `/status`, `/verbose`, `/repo`
+**Commands:** `/start`, `/new`, `/status`, `/verbose`, `/repo`, `/model`
 If `ENABLE_PROJECT_THREADS=true`: `/sync_threads`
 
 ```
@@ -129,6 +129,25 @@ Use `/verbose 0|1|2` to control how much background activity is shown:
 | **1** (normal, default) | Tool names + reasoning snippets in real-time |
 | **2** (detailed) | Tool names with inputs + longer reasoning text |
 
+#### Switching Models
+
+Use `/model` to switch the Claude model on the fly — no config editing required. The bot presents an inline keyboard with available models, switches immediately, and confirms with a message after restarting:
+
+```
+You: /model
+Bot: 🤖 Select Claude Model
+     Current: claude-sonnet-4-6
+     [ Opus 4.6 — most capable      ]
+     [✅ Sonnet 4.6 — balanced       ]
+     [ Haiku 4.5 — fastest          ]
+
+You: [tap Opus 4.6]
+Bot: ✅ Model set to: claude-opus-4-6
+     🔄 Restarting…
+Bot: ✅ Bot restarted
+     Now using model: claude-opus-4-6
+```
+
 #### GitHub Workflow
 
 Claude Code already knows how to use `gh` CLI and `git`. Authenticate on your server with `gh auth login`, then work with repos conversationally:
@@ -157,7 +176,7 @@ Use `/repo` to list cloned repos in your workspace, or `/repo <name>` to switch 
 
 Set `AGENTIC_MODE=false` to enable the full 13-command terminal-like interface with directory navigation, inline keyboards, quick actions, git integration, and session export.
 
-**Commands:** `/start`, `/help`, `/new`, `/continue`, `/end`, `/status`, `/cd`, `/ls`, `/pwd`, `/projects`, `/export`, `/actions`, `/git`  
+**Commands:** `/start`, `/help`, `/new`, `/continue`, `/end`, `/status`, `/cd`, `/ls`, `/pwd`, `/projects`, `/export`, `/actions`, `/git`, `/model`  
 If `ENABLE_PROJECT_THREADS=true`: `/sync_threads`
 
 ```
