@@ -3,7 +3,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-A Telegram bot that gives you remote access to [Claude Code](https://claude.ai/code). Chat naturally with Claude about your projects from anywhere -- no terminal commands needed.
+A Telegram bot that gives you remote access to [Claude Code](https://claude.ai/code). Chat naturally with Claude about your projects from anywhere -- no terminal commands needed. Now with **persistent memory** via [MemPalace](https://github.com/milla-jovovich/mempalace) -- Claude remembers your projects, decisions, and preferences across sessions.
+
+## Table of Contents
+
+- [What is this?](#what-is-this)
+- [Quick Start](#quick-start)
+- [Modes](#modes)
+- [Event-Driven Automation](#event-driven-automation)
+- [Persistent Memory with MemPalace](#persistent-memory-with-mempalace) -- give your bot a brain that doesn't reset
+- [Features](#features)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
+- [Development](#development)
+- [License](#license)
 
 ## What is this?
 
