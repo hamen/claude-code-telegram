@@ -5,6 +5,13 @@
 
 A Telegram bot that gives you remote access to [Claude Code](https://claude.ai/code). Chat naturally with Claude about your projects from anywhere -- no terminal commands needed. Now with **persistent memory** via [MemPalace](https://github.com/milla-jovovich/mempalace) -- Claude remembers your projects, decisions, and preferences across sessions.
 
+> **This is a fork of [RichardAtCT/claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram)** with two additions I needed and couldn't wait for upstream to merge:
+>
+> 1. **`/model` command** -- switch between Opus, Sonnet, and Haiku from Telegram with an inline keyboard ([PR #160](https://github.com/RichardAtCT/claude-code-telegram/pull/160) is open upstream but not yet merged)
+> 2. **Persistent memory via MemPalace** -- Claude remembers your projects, decisions, and preferences across session resets. Zero code changes, pure MCP config. [Setup guide below.](#persistent-memory-with-mempalace)
+>
+> I actively maintain this fork and sync with upstream. If you want these features now, point your install here. Once the upstream PRs are merged, the fork stays useful for the MemPalace integration guide.
+
 ## Table of Contents
 
 - [What is this?](#what-is-this)
