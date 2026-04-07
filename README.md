@@ -200,10 +200,109 @@ Beyond direct chat, the bot can respond to external triggers:
 
 Enable with `ENABLE_API_SERVER=true` and `ENABLE_SCHEDULER=true`. See [docs/setup.md](docs/setup.md) for configuration.
 
+## Persistent Memory with MemPalace
+
+By default, Claude forgets everything when a session resets. [MemPalace](https://github.com/milla-jovovich/mempalace) fixes this -- it gives your bot persistent, searchable memory that survives across sessions. Runs 100% locally, no API key needed.
+
+### What it does
+
+After setup, Claude will:
+- **Remember** your name, projects, preferences, and past decisions
+- **Search** across months of conversations to find relevant context
+- **Track** facts in a knowledge graph with contradiction detection
+- **Recall** everything after `/new` or a session timeout -- no more amnesia
+
+### Setup (5 minutes)
+
+**1. Install mempalace into your bot's Python environment:**
+
+```bash
+# If installed via uv:
+$(dirname $(which claude-telegram-bot))/python -m pip install mempalace
+
+# If installed via pip/poetry:
+pip install mempalace
+```
+
+**2. Initialize the palace in your approved directory:**
+
+```bash
+mempalace init /path/to/your/approved_directory --yes
+```
+
+Then accept the room detection when prompted (just press Enter).
+
+**3. Create the MCP config file:**
+
+```bash
+mkdir -p /path/to/bot-data/config
+cat > /path/to/bot-data/config/mcp.json << 'EOF'
+{
+  "mcpServers": {
+    "mempalace": {
+      "command": "python",
+      "args": ["-m", "mempalace.mcp_server"]
+    }
+  }
+}
+EOF
+```
+
+> **Note:** If your bot runs in a virtualenv, use the full path to its Python binary instead of just `python`.
+
+**4. Create a ChromaDB collection** (one-time):
+
+```bash
+python -c "
+import chromadb
+c = chromadb.PersistentClient(path='$HOME/.mempalace/palace')
+c.get_or_create_collection('mempalace_drawers')
+print('Collection created')
+"
+```
+
+**5. Add memory instructions to CLAUDE.md** in your `APPROVED_DIRECTORY`:
+
+```markdown
+## Memory (MemPalace)
+
+You have persistent memory via MemPalace MCP tools. Your memory survives across sessions.
+
+### ALWAYS do this:
+1. **On first message of a session:** Call `mempalace_status` to check your palace, then `mempalace_search` for context about the user and current topic.
+2. **When the user tells you something to remember:** Call `mempalace_add_drawer` to store it AND `mempalace_kg_add` to add it to the knowledge graph. Confirm you saved it.
+3. **When asked about past conversations or facts:** Call `mempalace_search` or `mempalace_kg_query` BEFORE answering. Never guess from session context alone.
+4. **At the end of meaningful conversations:** Call `mempalace_diary_write` to record what happened.
+```
+
+**6. Update your `.env`:**
+
+```bash
+ENABLE_MCP=true
+MCP_CONFIG_PATH=/path/to/bot-data/config/mcp.json
+DISABLE_TOOL_VALIDATION=true
+```
+
+**7. Restart the bot** and test:
+
+```
+You: remember that I prefer TypeScript over JavaScript
+Bot: Got it! I've saved to memory: [uses mempalace_add_drawer + mempalace_kg_add]
+
+You: /new
+Bot: Session reset. What's next?
+
+You: what do you know about me?
+Bot: From my memory: you prefer TypeScript over JavaScript...
+```
+
+Zero code changes required. The bot's existing MCP infrastructure handles everything.
+
 ## Features
 
 ### Working Features
 
+- **Cross-session memory via [MemPalace](https://github.com/milla-jovovich/mempalace)** -- Claude remembers your name, projects, decisions, and preferences across session resets
 - Conversational agentic mode (default) with natural language interaction
 - Classic terminal-like mode with 13 commands and inline keyboards
 - Full Claude Code integration with SDK (primary) and CLI (fallback)
