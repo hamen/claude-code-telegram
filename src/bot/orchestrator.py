@@ -547,12 +547,19 @@ class MessageOrchestrator:
         dir_display = f"<code>{current_dir}/</code>"
 
         safe_name = escape_html(user.first_name)
+        if self.settings.bot_welcome_message:
+            welcome = self.settings.bot_welcome_message.replace(
+                "{name}", safe_name
+            ).replace("{dir}", str(current_dir))
+        else:
+            welcome = (
+                f"Hi {safe_name}! I'm your AI coding assistant.\n"
+                f"Just tell me what you need — I can read, write, and run code.\n\n"
+                f"Working in: {dir_display}\n"
+                f"Commands: /new (reset) · /status"
+            )
         await update.message.reply_text(
-            f"Hi {safe_name}! I'm your AI coding assistant.\n"
-            f"Just tell me what you need — I can read, write, and run code.\n\n"
-            f"Working in: {dir_display}\n"
-            f"Commands: /new (reset) · /status"
-            f"{sync_line}",
+            f"{welcome}{sync_line}",
             parse_mode="HTML",
         )
 

@@ -82,6 +82,10 @@ class Settings(BaseSettings):
         None,
         description="Path to custom CLAUDE.md (overrides default working_directory/CLAUDE.md)",
     )
+    bot_welcome_message: Optional[str] = Field(
+        None,
+        description="Custom welcome message for /start (supports {name} and {dir} placeholders)",
+    )
     claude_model: Optional[str] = Field(
         None, description="Claude model to use (defaults to CLI default if unset)"
     )

@@ -392,6 +392,9 @@ ENABLE_QUICK_ACTIONS=true
 # Point to a custom CLAUDE.md for this bot instance
 # Overrides the default APPROVED_DIRECTORY/CLAUDE.md
 CLAUDE_MD_PATH=/path/to/custom/CLAUDE.md
+
+# Custom /start welcome message ({name} and {dir} are replaced at runtime)
+BOT_WELCOME_MESSAGE=Ciao {name}! Sono il tuo Social Media Manager 📱
 ```
 
 This lets you run **multiple bot instances** with different identities, all sharing the same `APPROVED_DIRECTORY` (and thus the same file access and MemPalace):
