@@ -548,9 +548,11 @@ class MessageOrchestrator:
 
         safe_name = escape_html(user.first_name)
         if self.settings.bot_welcome_message:
-            welcome = self.settings.bot_welcome_message.replace(
-                "{name}", safe_name
-            ).replace("{dir}", str(current_dir))
+            welcome = (
+                self.settings.bot_welcome_message.replace("\\n", "\n")
+                .replace("{name}", safe_name)
+                .replace("{dir}", str(current_dir))
+            )
         else:
             welcome = (
                 f"Hi {safe_name}! I'm your AI coding assistant.\n"
