@@ -78,6 +78,10 @@ class Settings(BaseSettings):
         None,
         description="Anthropic API key for SDK (optional if CLI logged in)",
     )
+    claude_md_path: Optional[str] = Field(
+        None,
+        description="Path to custom CLAUDE.md (overrides default working_directory/CLAUDE.md)",
+    )
     claude_model: Optional[str] = Field(
         None, description="Claude model to use (defaults to CLI default if unset)"
     )

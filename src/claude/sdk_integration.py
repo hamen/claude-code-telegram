@@ -301,7 +301,11 @@ class ClaudeSDKManager:
                 f"All file operations must stay within {working_directory}. "
                 "Use relative paths."
             )
-            claude_md_path = Path(working_directory) / "CLAUDE.md"
+            # Use custom CLAUDE.md path if configured, otherwise default
+            if self.config.claude_md_path:
+                claude_md_path = Path(self.config.claude_md_path)
+            else:
+                claude_md_path = Path(working_directory) / "CLAUDE.md"
             if claude_md_path.exists():
                 base_prompt += "\n\n" + claude_md_path.read_text(encoding="utf-8")
                 logger.info(

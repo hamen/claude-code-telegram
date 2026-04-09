@@ -386,6 +386,24 @@ ENABLE_FILE_UPLOADS=true
 ENABLE_QUICK_ACTIONS=true
 ```
 
+### Custom System Prompt (Multi-Instance)
+
+```bash
+# Point to a custom CLAUDE.md for this bot instance
+# Overrides the default APPROVED_DIRECTORY/CLAUDE.md
+CLAUDE_MD_PATH=/path/to/custom/CLAUDE.md
+```
+
+This lets you run **multiple bot instances** with different identities, all sharing the same `APPROVED_DIRECTORY` (and thus the same file access and MemPalace):
+
+```
+Bot A (Nuc Code)    → default CLAUDE.md   → general-purpose coding assistant
+Bot B (Nuc Social)  → social/CLAUDE.md    → social media manager & marketing strategist
+Bot C (Nuc Ops)     → ops/CLAUDE.md       → sysadmin & infrastructure monitor
+```
+
+Each instance needs its own `.env` (different `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, and `CLAUDE_MD_PATH`), systemd service, and `config/` directory. All instances can share the same MCP config to access the same MemPalace for persistent cross-bot memory.
+
 ### Agentic Platform
 
 ```bash
