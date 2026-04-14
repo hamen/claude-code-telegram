@@ -1089,7 +1089,7 @@ class MessageOrchestrator:
                 FormattedMessage(_format_error_message(e), parse_mode="HTML")
             ]
         finally:
-            heartbeat.cancel()
+            # NOTE: heartbeat stays alive during message delivery — cancelled after sends
             self._active_requests.pop(user_id, None)
             if draft_streamer:
                 try:
@@ -1152,14 +1152,21 @@ class MessageOrchestrator:
                             ),
                         )
                     except Exception as plain_err:
-                        await update.message.reply_text(
-                            f"Failed to deliver response "
-                            f"(Telegram error: {str(plain_err)[:150]}). "
-                            f"Please try again.",
-                            reply_to_message_id=(
-                                update.message.message_id if i == 0 else None
-                            ),
-                        )
+                        try:
+                            await update.message.reply_text(
+                                f"Failed to deliver response "
+                                f"(Telegram error: {str(plain_err)[:150]}). "
+                                f"Please try again.",
+                                reply_to_message_id=(
+                                    update.message.message_id if i == 0 else None
+                                ),
+                            )
+                        except Exception as last_err:
+                            logger.error(
+                                "All send attempts failed — user received no response",
+                                error=str(last_err),
+                                user_id=user_id,
+                            )
 
             # Send images separately if caption wasn't used
             if images:
@@ -1171,6 +1178,9 @@ class MessageOrchestrator:
                     )
                 except Exception as img_err:
                     logger.warning("Image send failed", error=str(img_err))
+
+        # Cancel heartbeat — message delivery complete
+        heartbeat.cancel()
 
         # Audit log
         audit_logger = context.bot_data.get("audit_logger")
@@ -1332,14 +1342,47 @@ class MessageOrchestrator:
 
             if not caption_sent:
                 for i, message in enumerate(formatted_messages):
-                    await update.message.reply_text(
-                        message.text,
-                        parse_mode=message.parse_mode,
-                        reply_markup=None,
-                        reply_to_message_id=(
-                            update.message.message_id if i == 0 else None
-                        ),
-                    )
+                    if not message.text or not message.text.strip():
+                        continue
+                    try:
+                        await update.message.reply_text(
+                            message.text,
+                            parse_mode=message.parse_mode,
+                            reply_markup=None,
+                            reply_to_message_id=(
+                                update.message.message_id if i == 0 else None
+                            ),
+                        )
+                    except Exception as send_err:
+                        logger.warning(
+                            "Failed to send HTML response, retrying as plain text",
+                            error=str(send_err),
+                            message_index=i,
+                        )
+                        try:
+                            await update.message.reply_text(
+                                message.text,
+                                reply_markup=None,
+                                reply_to_message_id=(
+                                    update.message.message_id if i == 0 else None
+                                ),
+                            )
+                        except Exception as plain_err:
+                            try:
+                                await update.message.reply_text(
+                                    f"Failed to deliver response "
+                                    f"(Telegram error: {str(plain_err)[:150]}). "
+                                    f"Please try again.",
+                                    reply_to_message_id=(
+                                        update.message.message_id if i == 0 else None
+                                    ),
+                                )
+                            except Exception as last_err:
+                                logger.error(
+                                    "All send attempts failed — user received no response",
+                                    error=str(last_err),
+                                    user_id=user_id,
+                                )
                     if i < len(formatted_messages) - 1:
                         await asyncio.sleep(0.5)
 
@@ -1359,7 +1402,11 @@ class MessageOrchestrator:
             await progress_msg.edit_text(_format_error_message(e), parse_mode="HTML")
             logger.error("Claude file processing failed", error=str(e), user_id=user_id)
         finally:
-            heartbeat.cancel()
+            # NOTE: heartbeat stays alive during message delivery — cancelled after sends
+            self._active_requests.pop(user_id, None)
+
+        # Cancel heartbeat — message delivery complete
+        heartbeat.cancel()
 
     async def agentic_photo(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1498,70 +1545,121 @@ class MessageOrchestrator:
                 force_new=force_new,
                 images=images,
             )
-        finally:
-            heartbeat.cancel()
 
-        if force_new:
-            context.user_data["force_new_session"] = False
+            if force_new:
+                context.user_data["force_new_session"] = False
 
-        context.user_data["claude_session_id"] = claude_response.session_id
+            context.user_data["claude_session_id"] = claude_response.session_id
 
-        from .handlers.message import _update_working_directory_from_claude_response
+            from .handlers.message import _update_working_directory_from_claude_response
 
-        _update_working_directory_from_claude_response(
-            claude_response, context, self.settings, user_id
-        )
+            _update_working_directory_from_claude_response(
+                claude_response, context, self.settings, user_id
+            )
 
-        from .utils.formatting import ResponseFormatter
+            from .utils.formatting import ResponseFormatter
 
-        formatter = ResponseFormatter(self.settings)
-        formatted_messages = formatter.format_claude_response(claude_response.content)
+            formatter = ResponseFormatter(self.settings)
+            formatted_messages = formatter.format_claude_response(
+                claude_response.content
+            )
 
-        try:
-            await progress_msg.delete()
-        except Exception:
-            logger.debug("Failed to delete progress message, ignoring")
+            try:
+                await progress_msg.delete()
+            except Exception:
+                logger.debug("Failed to delete progress message, ignoring")
 
-        # Use MCP-collected images (from send_image_to_user tool calls).
-        images: List[ImageAttachment] = mcp_images_media
+            # Use MCP-collected images (from send_image_to_user tool calls).
+            images: List[ImageAttachment] = mcp_images_media
 
-        caption_sent = False
-        if images and len(formatted_messages) == 1:
-            msg = formatted_messages[0]
-            if msg.text and len(msg.text) <= 1024:
-                try:
-                    caption_sent = await self._send_images(
-                        update,
-                        images,
-                        reply_to_message_id=update.message.message_id,
-                        caption=msg.text,
-                        caption_parse_mode=msg.parse_mode,
-                    )
-                except Exception as img_err:
-                    logger.warning("Image+caption send failed", error=str(img_err))
+            caption_sent = False
+            if images and len(formatted_messages) == 1:
+                msg = formatted_messages[0]
+                if msg.text and len(msg.text) <= 1024:
+                    try:
+                        caption_sent = await self._send_images(
+                            update,
+                            images,
+                            reply_to_message_id=update.message.message_id,
+                            caption=msg.text,
+                            caption_parse_mode=msg.parse_mode,
+                        )
+                    except Exception as img_err:
+                        logger.warning("Image+caption send failed", error=str(img_err))
 
-        if not caption_sent:
-            for i, message in enumerate(formatted_messages):
-                if not message.text or not message.text.strip():
-                    continue
-                await update.message.reply_text(
-                    message.text,
-                    parse_mode=message.parse_mode,
-                    reply_markup=None,
-                    reply_to_message_id=(update.message.message_id if i == 0 else None),
+            if not caption_sent:
+                for i, message in enumerate(formatted_messages):
+                    if not message.text or not message.text.strip():
+                        continue
+                    try:
+                        await update.message.reply_text(
+                            message.text,
+                            parse_mode=message.parse_mode,
+                            reply_markup=None,
+                            reply_to_message_id=(
+                                update.message.message_id if i == 0 else None
+                            ),
+                        )
+                    except Exception as send_err:
+                        logger.warning(
+                            "Failed to send response, retrying as plain text",
+                            error=str(send_err),
+                        )
+                        try:
+                            await update.message.reply_text(
+                                message.text,
+                                reply_markup=None,
+                                reply_to_message_id=(
+                                    update.message.message_id if i == 0 else None
+                                ),
+                            )
+                        except Exception as plain_err:
+                            try:
+                                await update.message.reply_text(
+                                    f"Failed to deliver response "
+                                    f"(Telegram error: {str(plain_err)[:150]}). "
+                                    f"Please try again.",
+                                    reply_to_message_id=(
+                                        update.message.message_id if i == 0 else None
+                                    ),
+                                )
+                            except Exception as last_err:
+                                logger.error(
+                                    "All send attempts failed — user received no response",
+                                    error=str(last_err),
+                                    user_id=user_id,
+                                )
+                    if i < len(formatted_messages) - 1:
+                        await asyncio.sleep(0.5)
+
+                if images:
+                    try:
+                        await self._send_images(
+                            update,
+                            images,
+                            reply_to_message_id=update.message.message_id,
+                        )
+                    except Exception as img_err:
+                        logger.warning("Image send failed", error=str(img_err))
+
+        except Exception as e:
+            from .handlers.message import _format_error_message
+
+            try:
+                await progress_msg.edit_text(
+                    _format_error_message(e), parse_mode="HTML"
                 )
-                if i < len(formatted_messages) - 1:
-                    await asyncio.sleep(0.5)
+            except Exception:
+                logger.debug("Failed to edit progress message with error")
+            logger.error(
+                "Claude media processing failed", error=str(e), user_id=user_id
+            )
+        finally:
+            # NOTE: heartbeat stays alive during message delivery — cancelled after sends
+            pass
 
-            if images:
-                try:
-                    await self._send_images(
-                        update,
-                        images,
-                        reply_to_message_id=update.message.message_id,
-                    )
-                except Exception as img_err:
-                    logger.warning("Image send failed", error=str(img_err))
+        # Cancel heartbeat — message delivery complete
+        heartbeat.cancel()
 
     async def _handle_unknown_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1589,6 +1687,12 @@ class MessageOrchestrator:
                 "Voice processing is not available. "
                 "Ensure whisper.cpp is installed and the model file exists. "
                 "Check WHISPER_CPP_BINARY_PATH and WHISPER_CPP_MODEL_PATH settings."
+            )
+        if self.settings.voice_provider == "stt_server":
+            return (
+                "Voice processing is not available. "
+                "Ensure the STT server is running and the socket exists at "
+                f"{self.settings.stt_server_socket_path}."
             )
         return (
             "Voice processing is not available. "
