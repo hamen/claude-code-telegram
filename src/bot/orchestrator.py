@@ -1077,6 +1077,17 @@ class MessageOrchestrator:
                     response_content or ""
                 ) + "\n\n_(Interrupted by user)_"
 
+            if not response_content or not response_content.strip():
+                logger.warning(
+                    "Empty response content from Claude",
+                    user_id=user_id,
+                    session_id=claude_response.session_id,
+                    num_tools=len(claude_response.tools_used),
+                    cost=claude_response.cost,
+                    duration_ms=claude_response.duration_ms,
+                    is_error=claude_response.is_error,
+                )
+
             formatted_messages = formatter.format_claude_response(response_content)
 
         except Exception as e:
@@ -1122,10 +1133,12 @@ class MessageOrchestrator:
                     logger.warning("Image+caption send failed", error=str(img_err))
 
         # Send text messages (skip if caption was already embedded in photos)
+        any_sent = False
         if not caption_sent:
             for i, message in enumerate(formatted_messages):
                 if not message.text or not message.text.strip():
                     continue
+                any_sent = True
                 try:
                     await update.message.reply_text(
                         message.text,
@@ -1167,6 +1180,21 @@ class MessageOrchestrator:
                                 error=str(last_err),
                                 user_id=user_id,
                             )
+
+            # Safety net: if no message was sent, always notify the user
+            if not any_sent:
+                logger.warning(
+                    "No text in formatted_messages — sending fallback",
+                    user_id=user_id,
+                    num_messages=len(formatted_messages),
+                )
+                try:
+                    await update.message.reply_text(
+                        "✅ Done.",
+                        reply_to_message_id=update.message.message_id,
+                    )
+                except Exception:
+                    pass
 
             # Send images separately if caption wasn't used
             if images:
