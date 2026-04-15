@@ -209,9 +209,13 @@ class Settings(BaseSettings):
     enable_voice_messages: bool = Field(
         True, description="Enable voice message transcription"
     )
-    voice_provider: Literal["mistral", "openai", "local"] = Field(
+    voice_provider: Literal["mistral", "openai", "local", "stt_server"] = Field(
         "mistral",
-        description="Voice transcription provider: 'mistral', 'openai', or 'local'",
+        description="Voice transcription provider: 'mistral', 'openai', 'local', or 'stt_server'",
+    )
+    stt_server_socket_path: str = Field(
+        "/tmp/stt_server.sock",
+        description="Unix socket path for the local STT server (used when VOICE_PROVIDER=stt_server)",
     )
     mistral_api_key: Optional[SecretStr] = Field(
         None, description="Mistral API key for voice transcription"
@@ -450,9 +454,9 @@ class Settings(BaseSettings):
         if v is None:
             return "mistral"
         provider = str(v).strip().lower()
-        if provider not in {"mistral", "openai", "local"}:
+        if provider not in {"mistral", "openai", "local", "stt_server"}:
             raise ValueError(
-                "voice_provider must be one of ['mistral', 'openai', 'local']"
+                "voice_provider must be one of ['mistral', 'openai', 'local', 'stt_server']"
             )
         return provider
 
@@ -574,7 +578,7 @@ class Settings(BaseSettings):
         """API key environment variable required for the configured voice provider."""
         if self.voice_provider == "openai":
             return "OPENAI_API_KEY"
-        if self.voice_provider == "local":
+        if self.voice_provider in {"local", "stt_server"}:
             return ""
         return "MISTRAL_API_KEY"
 
@@ -585,6 +589,8 @@ class Settings(BaseSettings):
             return "OpenAI Whisper"
         if self.voice_provider == "local":
             return "Local whisper.cpp"
+        if self.voice_provider == "stt_server":
+            return "Local STT Server"
         return "Mistral Voxtral"
 
     @property

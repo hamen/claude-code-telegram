@@ -1,6 +1,7 @@
-"""Handle voice message transcription via Mistral (Voxtral), OpenAI (Whisper), or local whisper.cpp."""
+"""Handle voice message transcription via Mistral, OpenAI, local whisper.cpp, or local STT server."""
 
 import asyncio
+import json
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -26,7 +27,7 @@ class ProcessedVoice:
 
 
 class VoiceHandler:
-    """Transcribe Telegram voice messages using Mistral, OpenAI, or local whisper.cpp."""
+    """Transcribe Telegram voice messages using Mistral, OpenAI, local whisper.cpp, or local STT server."""
 
     # Timeout (seconds) for ffmpeg and whisper.cpp subprocess calls.
     LOCAL_SUBPROCESS_TIMEOUT: int = 120
@@ -87,7 +88,9 @@ class VoiceHandler:
             file_size=initial_file_size or resolved_file_size or len(voice_bytes),
         )
 
-        if self.config.voice_provider == "local":
+        if self.config.voice_provider == "stt_server":
+            transcription = await self._transcribe_stt_server(voice_bytes)
+        elif self.config.voice_provider == "local":
             transcription = await self._transcribe_local(voice_bytes)
         elif self.config.voice_provider == "openai":
             transcription = await self._transcribe_openai(voice_bytes)
@@ -201,6 +204,82 @@ class VoiceHandler:
 
         self._openai_client = AsyncOpenAI(api_key=api_key)
         return self._openai_client
+
+    # -- Local STT server provider (faster-whisper via Unix socket) --
+
+    async def _transcribe_stt_server(self, voice_bytes: bytes) -> str:
+        """Transcribe audio via local STT server (faster-whisper on GPU).
+
+        The server listens on a Unix socket and accepts JSON requests with
+        an audio file path. It returns JSON with a 'text' field.
+        """
+        socket_path = self.config.stt_server_socket_path
+        if not Path(socket_path).exists():
+            raise RuntimeError(
+                f"STT server socket not found at {socket_path}. "
+                "Is the STT server running? Start it with: "
+                "cd ~/bin/speech-to-text-for-ubuntu && python3 stt_server.py"
+            )
+
+        tmp_dir = None
+        try:
+            tmp_dir = tempfile.mkdtemp(prefix="voice_stt_")
+            ogg_path = Path(tmp_dir) / "voice.ogg"
+            wav_path = Path(tmp_dir) / "voice.wav"
+
+            ogg_path.write_bytes(voice_bytes)
+
+            # Convert OGG/Opus -> WAV (16kHz mono PCM) using ffmpeg
+            await self._convert_ogg_to_wav(ogg_path, wav_path)
+
+            # Send transcription request to STT server via Unix socket
+            request = json.dumps({"audio_path": str(wav_path)}) + "\n"
+
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, self._stt_server_request, socket_path, request
+                ),
+                timeout=self.LOCAL_SUBPROCESS_TIMEOUT,
+            )
+
+            result = json.loads(response)
+            if "error" in result:
+                raise RuntimeError(
+                    f"STT server transcription failed: {result['error']}"
+                )
+
+            text = (result.get("text") or "").strip()
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        if not text:
+            raise ValueError(
+                "STT server transcription returned an empty response."
+            )
+        return text
+
+    @staticmethod
+    def _stt_server_request(socket_path: str, request: str) -> str:
+        """Send a request to the STT server and return the response (blocking)."""
+        import socket as sock_module
+
+        client = sock_module.socket(sock_module.AF_UNIX, sock_module.SOCK_STREAM)
+        try:
+            client.connect(socket_path)
+            client.sendall(request.encode("utf-8"))
+            client.shutdown(sock_module.SHUT_WR)
+
+            data = b""
+            while True:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            return data.decode("utf-8").strip()
+        finally:
+            client.close()
 
     # -- Local whisper.cpp provider --
 
