@@ -5,12 +5,7 @@
 
 A Telegram bot that gives you remote access to [Claude Code](https://claude.ai/code). Chat naturally with Claude about your projects from anywhere -- no terminal commands needed. Now with **persistent memory** via [MemPalace](https://github.com/milla-jovovich/mempalace) -- Claude remembers your projects, decisions, and preferences across sessions.
 
-> **This is a fork of [RichardAtCT/claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram)** with two additions I needed and couldn't wait for upstream to merge:
->
-> 1. **`/model` command** -- switch between Opus, Sonnet, and Haiku from Telegram with an inline keyboard ([PR #160](https://github.com/RichardAtCT/claude-code-telegram/pull/160) is open upstream but not yet merged)
-> 2. **Persistent memory via MemPalace** -- Claude remembers your projects, decisions, and preferences across session resets. Zero code changes, pure MCP config. [Setup guide below.](#persistent-memory-with-mempalace)
->
-> I actively maintain this fork and sync with upstream. If you want these features now, point your install here. Once the upstream PRs are merged, the fork stays useful for the MemPalace integration guide.
+> **This is a fork of [RichardAtCT/claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram)** with additions I needed and couldn't wait for upstream to merge. I actively maintain this fork and sync with upstream. See the [Changelog](#changelog-fork-vs-upstream) for what's different.
 
 ## Table of Contents
 
@@ -24,6 +19,7 @@ A Telegram bot that gives you remote access to [Claude Code](https://claude.ai/c
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
 - [Development](#development)
+- [Changelog (Fork vs Upstream)](#changelog-fork-vs-upstream)
 - [License](#license)
 
 ## What is this?
@@ -520,6 +516,20 @@ Each command commits, tags, and pushes automatically, triggering CI tests and a 
 4. Submit a Pull Request
 
 **Code standards:** Python 3.11+, Black formatting (88 chars), type hints required, pytest with >85% coverage.
+
+## Changelog (Fork vs Upstream)
+
+What this fork adds on top of [RichardAtCT/claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram):
+
+| Date | Change | Details |
+|------|--------|---------|
+| 2025-04-15 | **fix: empty response safety net** | Bot now always sends a fallback message when Claude returns empty content -- no more silent drops. Added diagnostic logging for empty responses. |
+| 2025-04-15 | **feat: local STT server voice provider** | New `VOICE_PROVIDER=stt_server` option for faster-whisper on GPU via Unix socket. Faster and fully offline alternative to API-based transcription. |
+| 2025-04-14 | **fix: heartbeat + retry for media handlers** | Heartbeat and retry logic applied to document and media message handlers. |
+| 2025-04-13 | **feat: BOT_WELCOME_MESSAGE** | Per-instance custom `/start` greeting via `BOT_WELCOME_MESSAGE` env var. |
+| 2025-04-13 | **feat: CLAUDE_MD_PATH** | Custom `CLAUDE.md` path for multi-instance bot deployments with different bot identities. |
+| 2025-04-12 | **feat: /model command** | Switch between Opus, Sonnet, and Haiku at runtime from Telegram with an inline keyboard. ([PR #160](https://github.com/RichardAtCT/claude-code-telegram/pull/160) open upstream) |
+| 2025-04-12 | **docs: MemPalace integration** | Setup guide for persistent memory via [MemPalace](https://github.com/milla-jovovich/mempalace) MCP server. |
 
 ## License
 
