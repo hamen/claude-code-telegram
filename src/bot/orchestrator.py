@@ -1089,6 +1089,13 @@ class MessageOrchestrator:
                 )
 
             formatted_messages = formatter.format_claude_response(response_content)
+            logger.info(
+                "Response formatted for delivery",
+                user_id=user_id,
+                num_chunks=len(formatted_messages),
+                content_length=len(response_content) if response_content else 0,
+                chunk_lengths=[len(m.text) for m in formatted_messages if m.text],
+            )
 
         except Exception as e:
             success = False
@@ -1108,6 +1115,7 @@ class MessageOrchestrator:
                 except Exception:
                     logger.debug("Draft flush failed in finally block", user_id=user_id)
 
+        logger.info("Deleting progress message, starting delivery", user_id=user_id)
         try:
             await progress_msg.delete()
         except Exception:
@@ -1140,6 +1148,13 @@ class MessageOrchestrator:
                     continue
                 any_sent = True
                 try:
+                    logger.info(
+                        "Sending response chunk",
+                        user_id=user_id,
+                        chunk_index=i,
+                        text_length=len(message.text),
+                        parse_mode=message.parse_mode,
+                    )
                     await update.message.reply_text(
                         message.text,
                         parse_mode=message.parse_mode,
@@ -1148,13 +1163,22 @@ class MessageOrchestrator:
                             update.message.message_id if i == 0 else None
                         ),
                     )
+                    logger.info(
+                        "Response chunk sent OK",
+                        user_id=user_id,
+                        chunk_index=i,
+                    )
                     if i < len(formatted_messages) - 1:
                         await asyncio.sleep(0.5)
                 except Exception as send_err:
-                    logger.warning(
+                    logger.error(
                         "Failed to send HTML response, retrying as plain text",
                         error=str(send_err),
+                        error_type=type(send_err).__name__,
                         message_index=i,
+                        text_length=len(message.text),
+                        text_preview=message.text[:200],
+                        user_id=user_id,
                     )
                     try:
                         await update.message.reply_text(
@@ -1165,6 +1189,13 @@ class MessageOrchestrator:
                             ),
                         )
                     except Exception as plain_err:
+                        logger.error(
+                            "Plain text fallback also failed",
+                            error=str(plain_err),
+                            error_type=type(plain_err).__name__,
+                            user_id=user_id,
+                            message_index=i,
+                        )
                         try:
                             await update.message.reply_text(
                                 f"Failed to deliver response "
@@ -1208,6 +1239,7 @@ class MessageOrchestrator:
                     logger.warning("Image send failed", error=str(img_err))
 
         # Cancel heartbeat — message delivery complete
+        logger.info("Message delivery complete", user_id=user_id, any_sent=any_sent)
         heartbeat.cancel()
 
         # Audit log
