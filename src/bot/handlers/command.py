@@ -1233,7 +1233,8 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 AVAILABLE_MODELS = [
-    ("claude-opus-4-6", "Opus 4.6 — most capable"),
+    ("claude-opus-4-7", "Opus 4.7 — most capable"),
+    ("claude-opus-4-8", "Opus 4.8 — frontier"),
     ("claude-sonnet-4-6", "Sonnet 4.6 — balanced"),
     ("claude-haiku-4-5-20251001", "Haiku 4.5 — fastest"),
 ]

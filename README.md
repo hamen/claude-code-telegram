@@ -154,15 +154,16 @@ Use `/model` to switch the Claude model on the fly — no config editing require
 You: /model
 Bot: 🤖 Select Claude Model
      Current: claude-sonnet-4-6
-     [ Opus 4.6 — most capable      ]
+     [ Opus 4.7 — most capable      ]
+     [ Opus 4.8 — frontier          ]
      [✅ Sonnet 4.6 — balanced       ]
      [ Haiku 4.5 — fastest          ]
 
-You: [tap Opus 4.6]
-Bot: ✅ Model set to: claude-opus-4-6
+You: [tap Opus 4.7]
+Bot: ✅ Model set to: claude-opus-4-7
      🔄 Restarting…
 Bot: ✅ Bot restarted
-     Now using model: claude-opus-4-6
+     Now using model: claude-opus-4-7
 ```
 
 #### GitHub Workflow
@@ -523,6 +524,7 @@ What this fork adds on top of [RichardAtCT/claude-code-telegram](https://github.
 
 | Date | Change | Details |
 |------|--------|---------|
+| 2026-05-29 | **update: model list for Opus 4.7/4.8** | Default model updated to Opus 4.7; Opus 4.8 (frontier) added to `/model` picker. Opus 4.6 removed from default list. |
 | 2025-04-15 | **fix: empty response safety net** | Bot now always sends a fallback message when Claude returns empty content -- no more silent drops. Added diagnostic logging for empty responses. |
 | 2025-04-15 | **feat: local STT server voice provider** | New `VOICE_PROVIDER=stt_server` option for faster-whisper on GPU via Unix socket. Faster and fully offline alternative to API-based transcription. |
 | 2025-04-14 | **fix: heartbeat + retry for media handlers** | Heartbeat and retry logic applied to document and media message handlers. |
