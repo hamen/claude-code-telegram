@@ -16,9 +16,9 @@ from src.claude import (
     ClaudeIntegration,
     SessionManager,
 )
-from src.claude.sdk_integration import ClaudeSDKManager
 from src.config.features import FeatureFlags
 from src.config.settings import Settings
+from src.engine import create_agent_manager
 from src.events.bus import EventBus
 from src.events.handlers import AgentHandler
 from src.events.middleware import EventSecurityMiddleware
@@ -140,13 +140,14 @@ async def create_application(config: Settings) -> Dict[str, Any]:
     session_storage = SQLiteSessionStorage(storage.db_manager)
     session_manager = SessionManager(config, session_storage)
 
-    # Create Claude SDK manager and integration facade
-    logger.info("Using Claude Python SDK integration")
-    sdk_manager = ClaudeSDKManager(config, security_validator=security_validator)
+    # Create the agent manager for the configured backend (claude | cursor | …)
+    # and wrap it in the engine-agnostic integration facade.
+    agent_manager = create_agent_manager(config, security_validator=security_validator)
+    logger.info("Using agent backend", backend=config.agent_backend)
 
     claude_integration = ClaudeIntegration(
         config=config,
-        sdk_manager=sdk_manager,
+        sdk_manager=agent_manager,
         session_manager=session_manager,
     )
 
@@ -280,6 +281,7 @@ async def run_application(app: Dict[str, Any]) -> None:
         # Send welcome-back message if this is a model-switch restart
         import json
         from pathlib import Path as _Path
+
         _state_path = _Path("/tmp/claude-bot-restart-state.json")
         if _state_path.exists():
             try:
