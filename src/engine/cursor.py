@@ -123,6 +123,10 @@ class CursorAgentManager:
             # Emit incremental text deltas so the bot's draft streamer can show
             # the response body as it is generated (not just at the end).
             cmd.append("--stream-partial-output")
+        if getattr(self.config, "enable_mcp", False):
+            # Headless runs can't answer interactive MCP-approval prompts, so
+            # auto-approve the MCP servers configured in cursor-agent's config.
+            cmd.append("--approve-mcps")
         if continue_session and session_id:
             cmd += ["--resume", session_id]
         # `--` terminates option parsing so a user prompt that happens to start
