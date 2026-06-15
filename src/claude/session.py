@@ -38,9 +38,6 @@ class ClaudeSession:
     message_count: int = 0
     tools_used: List[str] = field(default_factory=list)
     is_new_session: bool = False  # True if session hasn't been sent to Claude Code yet
-    backend: str = (
-        "claude"  # Agent backend that owns this session (claude | cursor | …)
-    )
 
     def is_expired(self, timeout_hours: int) -> bool:
         """Check if session has expired."""
@@ -174,7 +171,7 @@ class SessionManager:
                 user_id=user_id,
             )
 
-        # Create session with empty ID — the agent will provide the real one
+        # Create session with empty ID — Claude will provide the real one
         new_session = ClaudeSession(
             session_id="",
             user_id=user_id,
@@ -182,7 +179,6 @@ class SessionManager:
             created_at=datetime.now(UTC),
             last_used=datetime.now(UTC),
             is_new_session=True,
-            backend=(self.config.agent_backend or "claude").strip().lower(),
         )
 
         # Don't save to storage yet — deferred until after Claude responds

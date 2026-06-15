@@ -73,7 +73,6 @@ class SQLiteSessionStorage(SessionStorage):
             total_cost=session.total_cost,
             total_turns=session.total_turns,
             message_count=session.message_count,
-            backend=session.backend,
         )
 
         async with self.db_manager.get_connection() as conn:
@@ -99,8 +98,8 @@ class SQLiteSessionStorage(SessionStorage):
                     """
                     INSERT INTO sessions
                     (session_id, user_id, project_path, created_at, last_used,
-                     total_cost, total_turns, message_count, backend)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     total_cost, total_turns, message_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         session_model.session_id,
@@ -111,7 +110,6 @@ class SQLiteSessionStorage(SessionStorage):
                         session_model.total_cost,
                         session_model.total_turns,
                         session_model.message_count,
-                        session_model.backend,
                     ),
                 )
 
@@ -150,7 +148,6 @@ class SQLiteSessionStorage(SessionStorage):
                 total_turns=session_model.total_turns,
                 message_count=session_model.message_count,
                 tools_used=[],  # Tools are tracked separately in tool_usage table
-                backend=session_model.backend,
             )
 
             logger.debug(
@@ -198,7 +195,6 @@ class SQLiteSessionStorage(SessionStorage):
                     total_turns=session_model.total_turns,
                     message_count=session_model.message_count,
                     tools_used=[],  # Tools are tracked separately
-                    backend=session_model.backend,
                 )
                 sessions.append(claude_session)
 
@@ -225,7 +221,6 @@ class SQLiteSessionStorage(SessionStorage):
                     total_turns=session_model.total_turns,
                     message_count=session_model.message_count,
                     tools_used=[],  # Tools are tracked separately
-                    backend=session_model.backend,
                 )
                 sessions.append(claude_session)
 

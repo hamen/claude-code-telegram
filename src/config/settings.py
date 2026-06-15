@@ -74,20 +74,6 @@ class Settings(BaseSettings):
     claude_cli_path: Optional[str] = Field(
         None, description="Path to Claude CLI executable"
     )
-    # --- Agent backend selection ---
-    agent_backend: str = Field(
-        "claude",
-        description="Agent engine to use: 'claude' (Claude Agent SDK) or "
-        "'cursor' (cursor-agent CLI, runs on the Cursor subscription)",
-    )
-    cursor_agent_path: Optional[str] = Field(
-        None,
-        description="Path to the cursor-agent CLI (defaults to 'cursor-agent' on PATH)",
-    )
-    cursor_model: str = Field(
-        "composer-2.5",
-        description="Model to use with the cursor backend (e.g. composer-2.5)",
-    )
     anthropic_api_key: Optional[SecretStr] = Field(
         None,
         description="Anthropic API key for SDK (optional if CLI logged in)",
