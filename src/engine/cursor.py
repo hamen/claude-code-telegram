@@ -25,7 +25,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import structlog
 
-from ..claude.sdk_integration import ClaudeResponse, StreamUpdate
+from ..claude.exceptions import ClaudeTimeoutError
+from ..claude.sdk_integration import TASK_COMPLETED_MSG, ClaudeResponse, StreamUpdate
 from ..config.settings import Settings
 from ..security.validators import SecurityValidator
 
@@ -179,6 +180,28 @@ class CursorAgentManager:
             limit=_STREAM_LIMIT,
         )
 
+        # Drain stderr concurrently: a long run that logs heavily to stderr would
+        # otherwise fill the OS pipe buffer and block the child while we block on
+        # stdout — a classic deadlock. We keep the last lines for diagnostics.
+        stderr_chunks: List[str] = []
+
+        async def _drain_stderr() -> None:
+            if proc.stderr is None:
+                return
+            while True:
+                try:
+                    line = await proc.stderr.readline()
+                except (ValueError, asyncio.LimitOverrunError):
+                    continue
+                if not line:
+                    break
+                stderr_chunks.append(line.decode("utf-8", errors="replace"))
+
+        stderr_task = asyncio.create_task(_drain_stderr())
+
+        def _stderr_tail() -> str:
+            return "".join(stderr_chunks[-20:]).strip()
+
         interrupted = False
         final_text = ""
         result_session_id: Optional[str] = None
@@ -208,10 +231,16 @@ class CursorAgentManager:
                 try:
                     raw = await proc.stdout.readline()
                 except (ValueError, asyncio.LimitOverrunError) as exc:
-                    # Oversized line — skip it and keep going.
+                    # Oversized line (> _STREAM_LIMIT). readline() leaves the data
+                    # in the buffer, so a bare `continue` would spin on the same
+                    # bytes. Drain a chunk to resync on the next newline instead.
                     logger.warning(
                         "Skipping oversized cursor-agent line", error=str(exc)
                     )
+                    try:
+                        await proc.stdout.read(_STREAM_LIMIT)
+                    except Exception:
+                        break
                     continue
                 if not raw:
                     break
@@ -281,25 +310,39 @@ class CursorAgentManager:
             except asyncio.TimeoutError:
                 if proc.returncode is None:
                     proc.kill()
-                stderr = await _read_all(proc.stderr)
-                raise TimeoutError(
+                    await _reap(proc)
+                # Raise the backend-neutral timeout type the bot already renders
+                # specially (parity with the Claude backend).
+                raise ClaudeTimeoutError(
                     f"cursor-agent timed out after {timeout}s"
-                    + (f": {stderr.strip()}" if stderr else "")
+                    + (f": {_stderr_tail()}" if _stderr_tail() else "")
                 )
 
             await proc.wait()
 
             if proc.returncode not in (0, None) and not interrupted and not final_text:
-                stderr = await _read_all(proc.stderr)
                 raise RuntimeError(
                     f"cursor-agent exited with code {proc.returncode}"
-                    + (f": {stderr.strip()}" if stderr else "")
+                    + (f": {_stderr_tail()}" if _stderr_tail() else "")
                 )
         finally:
-            if interrupt_task is not None:
-                interrupt_task.cancel()
+            # Guarantee the child is reaped (no zombies) and helper tasks stop.
             if proc.returncode is None:
                 proc.kill()
+                await _reap(proc)
+            for task in (interrupt_task, stderr_task):
+                if task is not None:
+                    task.cancel()
+            await asyncio.gather(
+                *[t for t in (interrupt_task, stderr_task) if t is not None],
+                return_exceptions=True,
+            )
+
+        # Mirror the Claude backend: if tools ran but no text came back, don't
+        # hand the user a blank message.
+        if not final_text and tools_used:
+            unique = list(dict.fromkeys(t["name"] for t in tools_used))
+            final_text = TASK_COMPLETED_MSG.format(tools_summary=", ".join(unique))
 
         duration_ms = result_duration_ms
         if duration_ms is None:
@@ -347,11 +390,10 @@ def _extract_text(message: Optional[Dict[str, Any]]) -> str:
     return "".join(parts)
 
 
-async def _read_all(stream: Optional[asyncio.StreamReader]) -> str:
-    if stream is None:
-        return ""
+async def _reap(proc: "asyncio.subprocess.Process") -> None:
+    """Wait for a killed process to exit so it is not left as a zombie."""
     try:
-        data = await stream.read()
+        await asyncio.wait_for(proc.wait(), timeout=10)
     except Exception:
-        return ""
-    return data.decode("utf-8", errors="replace")
+        # Best-effort: never let cleanup raise out of execute_command.
+        pass

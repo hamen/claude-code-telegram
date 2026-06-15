@@ -1,11 +1,15 @@
 """Tests for the pluggable agent engine layer (factory + Cursor adapter)."""
 
+import os
+import stat
 import tempfile
+import textwrap
 from pathlib import Path
 
 import pytest
 
-from src.claude.sdk_integration import ClaudeSDKManager
+from src.claude.exceptions import ClaudeTimeoutError
+from src.claude.sdk_integration import ClaudeSDKManager, StreamUpdate
 from src.config.settings import Settings
 from src.engine import available_backends, create_agent_manager
 from src.engine.cursor import CursorAgentManager, _extract_text
@@ -141,3 +145,69 @@ class TestExtractText:
         assert _extract_text(None) == ""
         assert _extract_text({}) == ""
         assert _extract_text({"content": 123}) == ""
+
+
+def _fake_cli(body: str) -> str:
+    """Write an executable fake cursor-agent that runs `body` (a Python snippet)."""
+    fd, path = tempfile.mkstemp(prefix="fake-cursor-", suffix=".py", dir=_APPROVED_DIR)
+    script = "#!/usr/bin/env python3\nimport sys, time\n" + textwrap.dedent(body)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(script)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC | stat.S_IRUSR)
+    return path
+
+
+class TestCursorExecuteCommand:
+    async def _run(self, cli_path, **cfg):
+        mgr = CursorAgentManager(
+            _settings(agent_backend="cursor", cursor_agent_path=cli_path, **cfg)
+        )
+        updates = []
+
+        async def on_stream(u: StreamUpdate):
+            updates.append(u)
+
+        resp = await mgr.execute_command(
+            prompt="hi",
+            working_directory=Path(_APPROVED_DIR),
+            stream_callback=on_stream,
+        )
+        return resp, updates
+
+    async def test_stream_parsing_and_response(self):
+        cli = _fake_cli(r"""
+            for line in [
+                '{"type":"system","subtype":"init","session_id":"sid-1","model":"Composer 2.5"}',
+                '{"type":"tool_call","subtype":"started","tool_call":{"shellToolCall":{"args":{"command":"ls"},"description":"list"}}}',
+                '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}',
+                '{"type":"result","subtype":"success","is_error":false,"result":"hi there","session_id":"sid-1","duration_ms":42}',
+            ]:
+                print(line, flush=True)
+            """)
+        resp, updates = await self._run(cli)
+        assert resp.content == "hi there"
+        assert resp.session_id == "sid-1"
+        assert resp.is_error is False
+        assert resp.duration_ms == 42
+        assert [t["name"] for t in resp.tools_used] == ["Bash"]
+        # system + tool_call + assistant
+        assert len(updates) == 3
+        assert any(u.tool_calls for u in updates)
+
+    async def test_tools_only_fallback_message(self):
+        cli = _fake_cli(r"""
+            for line in [
+                '{"type":"system","subtype":"init","session_id":"sid-2"}',
+                '{"type":"tool_call","subtype":"started","tool_call":{"writeToolCall":{"args":{}}}}',
+                '{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"sid-2"}',
+            ]:
+                print(line, flush=True)
+            """)
+        resp, _ = await self._run(cli)
+        assert resp.content.startswith("✅ Task completed")
+        assert "Write" in resp.content
+
+    async def test_timeout_raises_claude_timeout_error(self):
+        cli = _fake_cli("time.sleep(5)\n")
+        with pytest.raises(ClaudeTimeoutError):
+            await self._run(cli, claude_timeout_seconds=1)
