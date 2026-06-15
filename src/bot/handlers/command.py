@@ -1232,58 +1232,26 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error("Error in git_command", error=str(e), user_id=user_id)
 
 
-CLAUDE_MODELS = [
+AVAILABLE_MODELS = [
     ("claude-opus-4-7", "Opus 4.7 — most capable"),
     ("claude-opus-4-8", "Opus 4.8 — frontier"),
     ("claude-sonnet-4-6", "Sonnet 4.6 — balanced"),
     ("claude-haiku-4-5-20251001", "Haiku 4.5 — fastest"),
 ]
 
-CURSOR_MODELS = [
-    ("composer-2.5", "Composer 2.5 — fast (default)"),
-    ("gpt-5.3-codex", "Codex 5.3 — OpenAI"),
-    ("gemini-3.5-flash", "Gemini 3.5 Flash"),
-]
-
-# Backward-compatible alias (Claude was the only backend originally).
-AVAILABLE_MODELS = CLAUDE_MODELS
-
-
-def model_config_for_backend(settings: Settings):
-    """Return (models, current, env_key, label) for the active agent backend.
-
-    Lets /model show and set the right model list depending on whether the bot
-    runs on the Claude SDK or the Cursor (cursor-agent) backend.
-    """
-    backend = (getattr(settings, "agent_backend", "claude") or "claude").strip().lower()
-    if backend == "cursor":
-        return (
-            CURSOR_MODELS,
-            getattr(settings, "cursor_model", None) or "composer-2.5",
-            "CURSOR_MODEL",
-            "Cursor",
-        )
-    return CLAUDE_MODELS, settings.claude_model or "default", "CLAUDE_MODEL", "Claude"
-
 
 async def model_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /model command — show inline keyboard to pick the agent model."""
+    """Handle /model command — show inline keyboard to pick Claude model."""
     settings: Settings = context.bot_data["settings"]
-    models, current, _env_key, label = model_config_for_backend(settings)
+    current = settings.claude_model or "default"
 
     keyboard = []
-    for model_id, model_label in models:
+    for model_id, label in AVAILABLE_MODELS:
         tick = "✅ " if model_id == current else ""
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    f"{tick}{model_label}", callback_data=f"model:{model_id}"
-                )
-            ]
-        )
+        keyboard.append([InlineKeyboardButton(f"{tick}{label}", callback_data=f"model:{model_id}")])
 
     await update.message.reply_text(
-        f"🤖 <b>Select {label} Model</b>\n\nCurrent: <code>{current}</code>",
+        f"🤖 <b>Select Claude Model</b>\n\nCurrent: <code>{current}</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
