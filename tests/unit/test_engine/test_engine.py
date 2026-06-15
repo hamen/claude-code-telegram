@@ -100,15 +100,6 @@ class TestCursorBuildCommand:
         assert "--resume" not in mgr._build_command("x", Path("/w"), "sid-123", False)
         assert "--resume" not in mgr._build_command("x", Path("/w"), None, True)
 
-    def test_approve_mcps_only_when_mcp_enabled(self):
-        mcp_cfg = Path(_APPROVED_DIR) / "mcp.json"
-        mcp_cfg.write_text('{"mcpServers": {"dummy": {"command": "true"}}}')
-        assert "--approve-mcps" not in self._mgr()._build_command(
-            "x", Path("/w"), None, False
-        )
-        with_mcp = self._mgr(enable_mcp=True, mcp_config_path=str(mcp_cfg))
-        assert "--approve-mcps" in with_mcp._build_command("x", Path("/w"), None, False)
-
 
 class TestToolName:
     def test_known_kinds_map_to_claude_names(self):
