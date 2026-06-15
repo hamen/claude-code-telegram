@@ -105,6 +105,7 @@ class CursorAgentManager:
         working_directory: Path,
         session_id: Optional[str],
         continue_session: bool,
+        partial: bool = False,
     ) -> List[str]:
         cmd = [
             self.cli_path,
@@ -118,9 +119,15 @@ class CursorAgentManager:
             "--force",  # auto-approve tools (no interactive per-tool prompts in headless)
             "--trust",  # trust the workspace without prompting
         ]
+        if partial:
+            # Emit incremental text deltas so the bot's draft streamer can show
+            # the response body as it is generated (not just at the end).
+            cmd.append("--stream-partial-output")
         if continue_session and session_id:
             cmd += ["--resume", session_id]
-        # Prompt is the trailing positional argument.
+        # `--` terminates option parsing so a user prompt that happens to start
+        # with '-'/'--' (e.g. "--help", "-v") is treated as the prompt, not a flag.
+        cmd.append("--")
         cmd.append(prompt)
         return cmd
 
@@ -161,7 +168,11 @@ class CursorAgentManager:
             )
 
         cmd = self._build_command(
-            prompt, working_directory, session_id, continue_session
+            prompt,
+            working_directory,
+            session_id,
+            continue_session,
+            partial=stream_callback is not None,
         )
         logger.info(
             "Starting cursor-agent command",
@@ -287,12 +298,20 @@ class CursorAgentManager:
                         )
                 elif etype == "assistant":
                     text = _extract_text(event.get("message"))
-                    if text:
-                        assistant_turns += 1
+                    if not text:
+                        continue
+                    if "timestamp_ms" in event:
+                        # Incremental delta (only with --stream-partial-output):
+                        # feed the draft streamer, which appends stream_delta text.
                         await self._emit(
                             stream_callback,
-                            StreamUpdate(type="assistant", content=text),
+                            StreamUpdate(type="stream_delta", content=text),
                         )
+                    else:
+                        # Final cumulative assistant message for this turn. The
+                        # body was already streamed via deltas (and the final text
+                        # comes from the result event), so just count the turn.
+                        assistant_turns += 1
                 elif etype == "result":
                     final_text = event.get("result") or final_text
                     result_session_id = event.get("session_id") or result_session_id
@@ -343,6 +362,14 @@ class CursorAgentManager:
         if not final_text and tools_used:
             unique = list(dict.fromkeys(t["name"] for t in tools_used))
             final_text = TASK_COMPLETED_MSG.format(tools_summary=", ".join(unique))
+
+        # Surface dropped images to the user instead of silently answering from
+        # text only (the Cursor backend cannot accept image inputs).
+        if images and not is_error:
+            final_text = (
+                "⚠️ The Cursor backend can't read images, so I answered from the "
+                "text only.\n\n" + final_text
+            )
 
         duration_ms = result_duration_ms
         if duration_ms is None:

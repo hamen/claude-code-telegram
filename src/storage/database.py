@@ -194,13 +194,11 @@ class DatabaseManager:
 
     async def _get_schema_version(self, conn: aiosqlite.Connection) -> int:
         """Get current schema version."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY
             )
-        """
-        )
+        """)
 
         cursor = await conn.execute("SELECT MAX(version) FROM schema_version")
         row = await cursor.fetchone()
@@ -308,6 +306,16 @@ class DatabaseManager:
                     ON project_threads(chat_id, is_active);
                 CREATE INDEX IF NOT EXISTS idx_project_threads_slug
                     ON project_threads(project_slug);
+                """,
+            ),
+            (
+                5,
+                """
+                -- Tag sessions with the agent backend that created them, so
+                -- auto-resume never hands a session ID to the wrong engine
+                -- (e.g. a Claude session ID to cursor-agent --resume) after
+                -- switching AGENT_BACKEND. Existing rows default to 'claude'.
+                ALTER TABLE sessions ADD COLUMN backend TEXT DEFAULT 'claude';
                 """,
             ),
         ]

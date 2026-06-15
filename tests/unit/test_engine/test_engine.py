@@ -74,6 +74,22 @@ class TestCursorBuildCommand:
         assert cmd[0] == "/opt/cursor-agent"
         assert "gpt-5.3-codex" in cmd
 
+    def test_prompt_is_separated_by_double_dash(self):
+        # A prompt that looks like a flag must be passed as the prompt, not parsed
+        # as a cursor-agent option.
+        cmd = self._mgr()._build_command("--help me", Path("/w"), None, False)
+        assert cmd[-2] == "--"
+        assert cmd[-1] == "--help me"
+
+    def test_partial_flag_only_when_requested(self):
+        mgr = self._mgr()
+        assert "--stream-partial-output" not in mgr._build_command(
+            "x", Path("/w"), None, False
+        )
+        assert "--stream-partial-output" in mgr._build_command(
+            "x", Path("/w"), None, False, partial=True
+        )
+
     def test_resume_added_only_when_continuing(self):
         mgr = self._mgr()
         with_resume = mgr._build_command("x", Path("/w"), "sid-123", True)
@@ -175,10 +191,14 @@ class TestCursorExecuteCommand:
         return resp, updates
 
     async def test_stream_parsing_and_response(self):
+        # Mirrors --stream-partial-output: text deltas carry timestamp_ms, then a
+        # final cumulative assistant message without it, then the result.
         cli = _fake_cli(r"""
             for line in [
                 '{"type":"system","subtype":"init","session_id":"sid-1","model":"Composer 2.5"}',
                 '{"type":"tool_call","subtype":"started","tool_call":{"shellToolCall":{"args":{"command":"ls"},"description":"list"}}}',
+                '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi "}]},"timestamp_ms":1}',
+                '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"there"}]},"timestamp_ms":2}',
                 '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}',
                 '{"type":"result","subtype":"success","is_error":false,"result":"hi there","session_id":"sid-1","duration_ms":42}',
             ]:
@@ -190,9 +210,11 @@ class TestCursorExecuteCommand:
         assert resp.is_error is False
         assert resp.duration_ms == 42
         assert [t["name"] for t in resp.tools_used] == ["Bash"]
-        # system + tool_call + assistant
-        assert len(updates) == 3
+        # system + tool_call + 2 stream deltas (final cumulative msg is not emitted)
+        assert len(updates) == 4
         assert any(u.tool_calls for u in updates)
+        deltas = [u.content for u in updates if u.type == "stream_delta"]
+        assert deltas == ["hi ", "there"]
 
     async def test_tools_only_fallback_message(self):
         cli = _fake_cli(r"""
@@ -211,3 +233,56 @@ class TestCursorExecuteCommand:
         cli = _fake_cli("time.sleep(5)\n")
         with pytest.raises(ClaudeTimeoutError):
             await self._run(cli, claude_timeout_seconds=1)
+
+
+class TestBackendScopedResume:
+    """The P1 fix: auto-resume must never cross agent backends."""
+
+    async def test_only_resumes_session_from_matching_backend(self):
+        from datetime import UTC, datetime
+        from unittest.mock import MagicMock
+
+        from src.claude.facade import ClaudeIntegration
+        from src.claude.session import ClaudeSession
+
+        wd = Path(_APPROVED_DIR)
+        now = datetime.now(UTC)
+        claude_sess = ClaudeSession(
+            session_id="claude-1",
+            user_id=1,
+            project_path=wd,
+            created_at=now,
+            last_used=now,
+            backend="claude",
+        )
+        cursor_sess = ClaudeSession(
+            session_id="cursor-1",
+            user_id=1,
+            project_path=wd,
+            created_at=now,
+            last_used=now,
+            backend="cursor",
+        )
+
+        sm = MagicMock()
+
+        async def _get_user_sessions(_uid):
+            return [claude_sess, cursor_sess]
+
+        sm._get_user_sessions = _get_user_sessions
+
+        integ = ClaudeIntegration(
+            config=_settings(agent_backend="cursor"),
+            sdk_manager=MagicMock(),
+            session_manager=sm,
+        )
+        found = await integ._find_resumable_session(1, wd)
+        assert found is not None and found.session_id == "cursor-1"
+
+        integ_claude = ClaudeIntegration(
+            config=_settings(agent_backend="claude"),
+            sdk_manager=MagicMock(),
+            session_manager=sm,
+        )
+        found_claude = await integ_claude._find_resumable_session(1, wd)
+        assert found_claude is not None and found_claude.session_id == "claude-1"
