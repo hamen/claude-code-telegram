@@ -1940,30 +1940,52 @@ class MessageOrchestrator:
 
         _, model_id = query.data.split(":", 1)
 
-        if not re.match(r'^[a-zA-Z0-9._-]+$', model_id):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", model_id):
             await query.edit_message_text("❌ Invalid model name.", parse_mode="HTML")
             return
 
-        env_path = Path("/home/ivan/claude-telegram-bot/.env")
+        # Pick the env key (CLAUDE_MODEL vs CURSOR_MODEL) for the active backend
+        # and only accept a model that backend actually offers.
+        settings = context.bot_data["settings"]
+        models, _current, env_key, _label = command.model_config_for_backend(settings)
+        if model_id not in {mid for mid, _ in models}:
+            await query.edit_message_text(
+                "❌ That model isn't available for the current backend.",
+                parse_mode="HTML",
+            )
+            return
+
+        # Resolve the bot's .env from the working directory (where Settings reads
+        # it from) so this works on any host, not a hard-coded path.
+        env_path = Path(os.environ.get("BOT_ENV_FILE") or ".env").resolve()
         content = env_path.read_text()
-        if re.search(r'^CLAUDE_MODEL=', content, re.MULTILINE):
-            content = re.sub(r'^CLAUDE_MODEL=.*$', f'CLAUDE_MODEL={model_id}', content, flags=re.MULTILINE)
+        if re.search(rf"^{env_key}=", content, re.MULTILINE):
+            content = re.sub(
+                rf"^{env_key}=.*$", f"{env_key}={model_id}", content, flags=re.MULTILINE
+            )
         else:
-            content += f'\nCLAUDE_MODEL={model_id}\n'
+            content += f"\n{env_key}={model_id}\n"
         env_path.write_text(content)
 
         await query.edit_message_text(
             f"✅ <b>Model set to:</b> <code>{model_id}</code>\n\n🔄 Restarting…",
             parse_mode="HTML",
         )
-        logger.info("Model changed via /model", model=model_id, user_id=query.from_user.id)
+        logger.info(
+            "Model changed via /model", model=model_id, user_id=query.from_user.id
+        )
 
         # Write restart state so the bot can send a welcome-back message on startup
         import json
+
         state_path = Path("/tmp/claude-bot-restart-state.json")
-        state_path.write_text(json.dumps({
-            "chat_id": query.message.chat_id,
-            "model_id": model_id,
-        }))
+        state_path.write_text(
+            json.dumps(
+                {
+                    "chat_id": query.message.chat_id,
+                    "model_id": model_id,
+                }
+            )
+        )
 
         os.kill(os.getpid(), signal.SIGTERM)
