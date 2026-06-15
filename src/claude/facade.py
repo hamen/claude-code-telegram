@@ -186,11 +186,13 @@ class ClaudeIntegration:
 
         sessions = await self.session_manager._get_user_sessions(user_id)
 
+        backend = (self.config.agent_backend or "claude").strip().lower()
         matching_sessions = [
             s
             for s in sessions
             if s.project_path == working_directory
             and bool(s.session_id)
+            and (s.backend or "claude") == backend
             and not s.is_expired(self.config.session_timeout_hours)
         ]
 
@@ -217,11 +219,15 @@ class ClaudeIntegration:
         # Get user's sessions
         sessions = await self.session_manager._get_user_sessions(user_id)
 
-        # Find most recent session in this directory (exclude sessions without IDs)
+        # Find most recent session in this directory (exclude sessions without
+        # IDs, and sessions created by a different agent backend).
+        backend = (self.config.agent_backend or "claude").strip().lower()
         matching_sessions = [
             s
             for s in sessions
-            if s.project_path == working_directory and bool(s.session_id)
+            if s.project_path == working_directory
+            and bool(s.session_id)
+            and (s.backend or "claude") == backend
         ]
 
         if not matching_sessions:
